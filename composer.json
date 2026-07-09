@@ -1,0 +1,46 @@
+{
+    "name": "jdz/cspmaker",
+    "type": "library",
+    "description": "Build Content Security Policy (CSP) header strings from a fluent builder, a config array/file, or reusable third-party integration recipes",
+    "keywords": [
+        "JDZ",
+        "csp",
+        "content-security-policy",
+        "security",
+        "maker"
+    ],
+    "homepage": "https://jdz.joffreydemetz.com/cspmaker",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Joffrey Demetz",
+            "email": "joffrey.demetz@gmail.com",
+            "homepage": "https://joffreydemetz.com",
+            "role": "Lead"
+        }
+    ],
+    "require": {
+        "php": ">=8.2"
+    },
+    "require-dev": {
+        "symfony/yaml": "^7.4",
+        "phpunit/phpunit": "^11.0"
+    },
+    "suggest": {
+        "symfony/yaml": "Needed only for CspBuilder::fromYaml() — array/fluent building has no dependency"
+    },
+    "autoload": {
+        "psr-4": {
+            "JDZ\\CspMaker\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit --colors=always --testdox",
+        "test-coverage": "phpunit --coverage-html coverage"
+    }
+}

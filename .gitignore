@@ -1,0 +1,7 @@
+/vendor/
+/coverage/
+/.phpunit.cache
+/testdox.txt
+composer.lock
+.claude/
+.work/

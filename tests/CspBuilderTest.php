@@ -57,16 +57,16 @@ final class CspBuilderTest extends TestCase
                 'connect-src' => 'self',
             ],
             'integrations' => [
-                ['matomo' => 'piwik.izisawebsite.com'],
+                ['matomo' => 'stats.example.com'],
                 'googleFonts',
             ],
         ])->build();
 
         // matomo host landed in every directive it needs — none forgotten
-        $this->assertStringContainsString('piwik.izisawebsite.com', $csp);
-        $this->assertMatchesRegularExpression('/script-src[^;]*piwik\.izisawebsite\.com/', $csp);
-        $this->assertMatchesRegularExpression('/img-src[^;]*piwik\.izisawebsite\.com/', $csp);
-        $this->assertMatchesRegularExpression('/connect-src[^;]*piwik\.izisawebsite\.com/', $csp);
+        $this->assertStringContainsString('stats.example.com', $csp);
+        $this->assertMatchesRegularExpression('/script-src[^;]*stats\.example\.com/', $csp);
+        $this->assertMatchesRegularExpression('/img-src[^;]*stats\.example\.com/', $csp);
+        $this->assertMatchesRegularExpression('/connect-src[^;]*stats\.example\.com/', $csp);
         // googleFonts
         $this->assertStringContainsString('https://fonts.googleapis.com', $csp);
         $this->assertStringContainsString('https://fonts.gstatic.com', $csp);
@@ -80,13 +80,13 @@ final class CspBuilderTest extends TestCase
           default-src: [self]
           script-src: [self, unsafe-inline]
         integrations:
-          - matomo: piwik.izisawebsite.com
+          - matomo: stats.example.com
         YAML);
 
         try {
             $csp = CspBuilder::fromYaml($tmp)->build();
             $this->assertStringContainsString("default-src 'self';", $csp);
-            $this->assertStringContainsString('piwik.izisawebsite.com', $csp);
+            $this->assertStringContainsString('stats.example.com', $csp);
         } finally {
             @unlink($tmp);
         }
@@ -109,7 +109,7 @@ final class CspBuilderTest extends TestCase
     }
 
     /**
-     * The exact Error 1 scenario: the kdcoaching base policy blocked Matomo
+     * The exact Error 1 scenario: a site's base policy blocked Matomo
      * because the host was never whitelisted. Through cspMaker it can't be.
      */
     public function testError1MatomoScenarioIsCovered(): void
@@ -123,11 +123,11 @@ final class CspBuilderTest extends TestCase
             'img-src' => ['self', 'data'],
         ];
 
-        $csp = CspBuilder::fromArray($base)->matomo('piwik.izisawebsite.com')->build();
+        $csp = CspBuilder::fromArray($base)->matomo('stats.example.com')->build();
 
         foreach (['script-src', 'img-src', 'connect-src'] as $d) {
             $this->assertMatchesRegularExpression(
-                '/' . preg_quote($d, '/') . '[^;]*piwik\.izisawebsite\.com/',
+                '/' . preg_quote($d, '/') . '[^;]*stats\.example\.com/',
                 $csp,
                 "$d must whitelist the Matomo host"
             );

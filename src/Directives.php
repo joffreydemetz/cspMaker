@@ -71,7 +71,7 @@ final class Directives
 
     /**
      * Short / legacy names accepted on input, mapped to their canonical form.
-     * Covers the terse `script`/`img`/… shape the installer has always used,
+     * Covers the terse `script`/`img`/… shape site configs have historically used,
      * plus a couple of historically-misspelled variants.
      */
     public const ALIASES = [

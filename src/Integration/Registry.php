@@ -14,7 +14,7 @@ use JDZ\CspMaker\Exception\CspMakerException;
 /**
  * Name => {@see Integration} lookup, seeded with the built-in recipes.
  *
- * Consumers register their own with {@see Registry::register()} — a saturn
+ * Consumers register their own with {@see Registry::register()} — a site
  * plugin, say, can ship its CSP needs as an integration instead of a hand-kept
  * host list.
  *

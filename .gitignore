@@ -1,6 +1,6 @@
 /vendor/
 /coverage/
-/.phpunit.cache
+/.phpunit.cache/
 /testdox.txt
 composer.lock
 .claude/

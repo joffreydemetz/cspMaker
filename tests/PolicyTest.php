@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use JDZ\CspMaker\Policy;
 use JDZ\CspMaker\Exception\CspMakerException;
@@ -18,10 +19,23 @@ final class PolicyTest extends TestCase
         $this->assertStringContainsString("img-src 'self' data:;", (string) $policy);
     }
 
-    public function testUnknownDirectiveThrows(): void
+    public static function unknownDirectiveProvider(): array
+    {
+        return [
+            'typo' => ['scriptt-src', 'scriptt-src'],
+            'shouted and padded, reported lowercased and trimmed' => [' SCRIPTT ', 'scriptt'],
+        ];
+    }
+
+    #[DataProvider('unknownDirectiveProvider')]
+    public function testUnknownDirectiveThrows(string $directive, string $reported): void
     {
         $this->expectException(CspMakerException::class);
-        (new Policy())->add('scriptt-src', 'self');
+        $this->expectExceptionMessage(sprintf(
+            'Unknown CSP directive "%s". Known directives: default-src, child-src, connect-src, font-src, frame-src, img-src, manifest-src, media-src, object-src, prefetch-src, script-src, script-src-elem, script-src-attr, style-src, style-src-elem, style-src-attr, worker-src, base-uri, form-action, frame-ancestors, report-uri, report-to, sandbox, require-trusted-types-for, trusted-types, upgrade-insecure-requests, block-all-mixed-content.',
+            $reported
+        ));
+        (new Policy())->add($directive, 'self');
     }
 
     public function testSourceKeywordsAndSchemesAreNormalized(): void
@@ -78,6 +92,98 @@ final class PolicyTest extends TestCase
         $this->assertSame('upgrade-insecure-requests;', $policy->build());
     }
 
+    public static function noSourcesProvider(): array
+    {
+        return [
+            'add with no sources turns a standalone directive on' => [
+                static fn (Policy $p) => $p->add('upgrade-insecure-requests'),
+                'upgrade-insecure-requests;',
+            ],
+            'set with no sources turns a standalone directive on' => [
+                static fn (Policy $p) => $p->set('block-all-mixed-content'),
+                'block-all-mixed-content;',
+            ],
+            'null turns a standalone directive on' => [
+                static fn (Policy $p) => $p->add('upgrade-insecure-requests', null),
+                'upgrade-insecure-requests;',
+            ],
+            'null in a merged map turns a standalone directive on' => [
+                static fn (Policy $p) => $p->merge(['upgrade-insecure-requests' => null]),
+                'upgrade-insecure-requests;',
+            ],
+            'null on a sandbox is its strictest form' => [
+                static fn (Policy $p) => $p->merge(['sandbox' => null]),
+                'sandbox;',
+            ],
+            'null on a source list adds nothing' => [
+                static fn (Policy $p) => $p->add('script-src', 'self')->merge(['script-src' => null]),
+                "script-src 'self';",
+            ],
+            'add with no sources on a source list adds nothing' => [
+                static fn (Policy $p) => $p->add('default-src', 'self')->add('script-src'),
+                "default-src 'self';",
+            ],
+        ];
+    }
+
+    #[DataProvider('noSourcesProvider')]
+    public function testNoSources(\Closure $steps, string $expected): void
+    {
+        $this->assertSame($expected, $steps(new Policy())->build());
+    }
+
+    public static function emptyValueDirectiveProvider(): array
+    {
+        return [
+            'sandbox true is its strictest form' => [
+                static fn (Policy $p) => $p->add('sandbox', true),
+                'sandbox;',
+            ],
+            'trusted-types empty string is its strictest form' => [
+                static fn (Policy $p) => $p->add('trusted-types', ''),
+                'trusted-types;',
+            ],
+            'sandbox empty list is its strictest form' => [
+                static fn (Policy $p) => $p->add('sandbox', []),
+                'sandbox;',
+            ],
+            'tokens added to a bare sandbox are kept' => [
+                static fn (Policy $p) => $p->add('sandbox', true)->add('sandbox', 'allow-scripts'),
+                'sandbox allow-scripts;',
+            ],
+            'true added to a sandbox keeps its tokens' => [
+                static fn (Policy $p) => $p->add('sandbox', 'allow-scripts')->add('sandbox', true),
+                'sandbox allow-scripts;',
+            ],
+            'set true resets a sandbox to its strictest form' => [
+                static fn (Policy $p) => $p->add('sandbox', 'allow-scripts')->set('sandbox', true),
+                'sandbox;',
+            ],
+            'removing the last sandbox token leaves its strictest form' => [
+                static fn (Policy $p) => $p->add('sandbox', 'allow-scripts')->remove('sandbox', 'allow-scripts'),
+                'sandbox;',
+            ],
+            'sandbox false is off' => [
+                static fn (Policy $p) => $p->add('sandbox', false),
+                '',
+            ],
+            'false removes an existing trusted-types, like a standalone directive' => [
+                static fn (Policy $p) => $p->add('trusted-types', 'default')->add('trusted-types', false),
+                '',
+            ],
+            'an empty report-uri is still dropped' => [
+                static fn (Policy $p) => $p->add('report-uri', true),
+                '',
+            ],
+        ];
+    }
+
+    #[DataProvider('emptyValueDirectiveProvider')]
+    public function testEmptyValueDirective(\Closure $steps, string $expected): void
+    {
+        $this->assertSame($expected, $steps(new Policy())->build());
+    }
+
     public function testValueDirectiveKeepsRawValue(): void
     {
         $policy = (new Policy())->add('report-uri', '/csp-report-endpoint');
@@ -115,12 +221,143 @@ final class PolicyTest extends TestCase
         $this->assertFalse($policy->covers('frame-ancestors'), 'non-fetch directive has no fallback');
     }
 
-    public function testLintFlagsUnsafeInlineAndMissingDefaultSrc(): void
+    public function testEveryDirectiveRendersInCanonicalOrder(): void
     {
-        $warnings = (new Policy())->add('script-src', ['self', 'unsafe-inline'])->lint();
+        // given in reverse canonical order
+        $policy = new Policy([
+            'block-all-mixed-content' => true,
+            'upgrade-insecure-requests' => true,
+            'trusted-types' => 'default',
+            'require-trusted-types-for' => "'script'",
+            'sandbox' => 'allow-scripts',
+            'report-to' => 'csp-endpoint',
+            'report-uri' => '/csp-report',
+            'frame-ancestors' => 'self',
+            'form-action' => 'self',
+            'base-uri' => 'self',
+            'worker-src' => 'self',
+            'style-src-attr' => 'self',
+            'style-src-elem' => 'self',
+            'style-src' => 'self',
+            'script-src-attr' => 'self',
+            'script-src-elem' => 'self',
+            'script-src' => 'self',
+            'prefetch-src' => 'self',
+            'object-src' => 'self',
+            'media-src' => 'self',
+            'manifest-src' => 'self',
+            'img-src' => 'self',
+            'frame-src' => 'self',
+            'font-src' => 'self',
+            'connect-src' => 'self',
+            'child-src' => 'self',
+            'default-src' => 'self',
+        ]);
 
-        $joined = implode("\n", $warnings);
-        $this->assertStringContainsString('default-src', $joined);
-        $this->assertStringContainsString("'unsafe-inline'", $joined);
+        $this->assertSame(
+            "default-src 'self'; child-src 'self'; connect-src 'self'; font-src 'self'; frame-src 'self'; img-src 'self'; "
+            . "manifest-src 'self'; media-src 'self'; object-src 'self'; prefetch-src 'self'; script-src 'self'; "
+            . "script-src-elem 'self'; script-src-attr 'self'; style-src 'self'; style-src-elem 'self'; style-src-attr 'self'; "
+            . "worker-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; report-uri /csp-report; "
+            . "report-to csp-endpoint; sandbox allow-scripts; require-trusted-types-for 'script'; trusted-types default; "
+            . 'upgrade-insecure-requests; block-all-mixed-content;',
+            $policy->build()
+        );
+    }
+
+    public function testToArrayIsCollapsedRankedAndInRenderOrder(): void
+    {
+        $policy = new Policy([
+            'upgrade-insecure-requests' => true,
+            'script-src' => ['https://cdn.example.com', 'nonce-abc', 'self', 'none'],
+            'default-src' => 'none',
+        ]);
+
+        $this->assertSame([
+            'default-src' => ["'none'"],
+            'script-src' => ["'self'", 'https://cdn.example.com', "'nonce-abc'"],
+            'upgrade-insecure-requests' => [],
+        ], $policy->toArray());
+    }
+
+    public static function removeProvider(): array
+    {
+        return [
+            'source given bare matches its normalized form' => [
+                ['script-src' => ["'self'", 'https://cdn.example.com']], 'script', 'self',
+                'script-src https://cdn.example.com;',
+            ],
+            'several sources at once' => [
+                ['script-src' => ['self', 'unsafe-inline', 'nonce-abc']], 'script-src', "'unsafe-inline' 'nonce-abc'",
+                "script-src 'self';",
+            ],
+            'last source removed drops the directive back to default-src' => [
+                ['default-src' => 'self', 'script-src' => 'https://cdn.example.com'], 'script-src', 'https://cdn.example.com',
+                "default-src 'self';",
+            ],
+            'source of an unset directive is a no-op' => [
+                ['default-src' => 'self'], 'script-src', 'self',
+                "default-src 'self';",
+            ],
+            'absent source is a no-op' => [
+                ['script-src' => 'self'], 'script-src', 'https://cdn.example.com',
+                "script-src 'self';",
+            ],
+            'whole standalone directive' => [
+                ['default-src' => 'self', 'upgrade-insecure-requests' => true], 'upgrade-insecure-requests', null,
+                "default-src 'self';",
+            ],
+        ];
+    }
+
+    #[DataProvider('removeProvider')]
+    public function testRemove(array $initial, string $directive, string|array|null $sources, string $expected): void
+    {
+        $this->assertSame($expected, (new Policy($initial))->remove($directive, $sources)->build());
+    }
+
+    public static function lintProvider(): array
+    {
+        $noDefault = 'No default-src set — fetch directives you did not list are unrestricted.';
+        $scriptInline = "script-src allows 'unsafe-inline' — weakens XSS protection.";
+        $styleInline = "style-src allows 'unsafe-inline' — weakens XSS protection.";
+        $objectSrc = "object-src is not constrained — consider object-src 'none'.";
+        $frameEmpty = 'frame-src is present but empty — it will be dropped from output.';
+
+        return [
+            'locked-down policy is clean' => [
+                ['default-src' => 'self', 'object-src' => 'none', 'base-uri' => 'self', 'frame-ancestors' => 'self'],
+                [],
+            ],
+            'default-src none alone is clean' => [['default-src' => 'none'], []],
+            'nonce- and hash-based sources are clean' => [
+                ['default-src' => 'self', 'script-src' => ['self', 'nonce-abc'], 'style-src' => ['self', 'sha256-AbC=']],
+                [],
+            ],
+            'empty policy' => [[], [$noDefault, $objectSrc]],
+            'object-src none without default-src' => [['object-src' => 'none'], [$noDefault]],
+            'script-src unsafe-inline (alias, bare keyword)' => [
+                ['default-src' => 'self', 'script' => ['self', 'unsafe-inline']],
+                [$scriptInline],
+            ],
+            'style-src unsafe-inline' => [
+                ['default-src' => 'self', 'style-src' => "'self' 'unsafe-inline'"],
+                [$styleInline],
+            ],
+            'source list present but empty' => [
+                ['default-src' => 'self', 'frame-src' => []],
+                [$frameEmpty],
+            ],
+            'every warning, in order' => [
+                ['frame-src' => [], 'style-src' => 'unsafe-inline', 'script-src' => 'unsafe-inline'],
+                [$noDefault, $scriptInline, $styleInline, $objectSrc, $frameEmpty],
+            ],
+        ];
+    }
+
+    #[DataProvider('lintProvider')]
+    public function testLint(array $policy, array $expected): void
+    {
+        $this->assertSame($expected, (new Policy($policy))->lint());
     }
 }

@@ -26,7 +26,7 @@ class Policy
     protected array $directives = [];
 
     /**
-     * @param array<string,string|array|bool> $policy  directive => source(s)
+     * @param array<string,string|array|bool|null> $policy  directive => source(s)
      */
     public function __construct(array $policy = [])
     {
@@ -41,9 +41,10 @@ class Policy
     /**
      * Add source(s) to a directive, keeping existing ones.
      *
-     * @param string|array|bool $sources  ignored for standalone directives
+     * @param string|array|bool|null $sources  null (none given) adds nothing, but turns a
+     *                                         standalone directive on; false turns it off
      */
-    public function add(string $directive, string|array|bool $sources = []): self
+    public function add(string $directive, string|array|bool|null $sources = null): self
     {
         return $this->put($directive, $sources, false);
     }
@@ -51,9 +52,9 @@ class Policy
     /**
      * Replace a directive's source(s) outright.
      *
-     * @param string|array|bool $sources
+     * @param string|array|bool|null $sources
      */
-    public function set(string $directive, string|array|bool $sources = []): self
+    public function set(string $directive, string|array|bool|null $sources = null): self
     {
         return $this->put($directive, $sources, true);
     }
@@ -89,7 +90,7 @@ class Policy
     /**
      * Merge a directive => source(s) map.
      *
-     * @param array<string,string|array|bool> $policy
+     * @param array<string,string|array|bool|null> $policy
      */
     public function merge(array $policy): self
     {
@@ -144,12 +145,13 @@ class Policy
         foreach ($this->orderedDirectives() as $canonical) {
             $tokens = $this->collapse($this->directives[$canonical]);
 
-            if (Directives::isStandalone($canonical)) {
+            // standalone, or a restrictive value directive in its strictest form
+            if (Directives::isStandalone($canonical) || ([] === $tokens && Directives::allowsEmptyValue($canonical))) {
                 $parts[] = $canonical . ';';
                 continue;
             }
 
-            // A source-list / value directive with nothing in it is meaningless.
+            // Any other source-list / value directive with nothing in it is meaningless.
             if ([] === $tokens) {
                 continue;
             }
@@ -192,17 +194,24 @@ class Policy
         return $warnings;
     }
 
-    private function put(string $directive, string|array|bool $sources, bool $overwrite): self
+    private function put(string $directive, string|array|bool|null $sources, bool $overwrite): self
     {
         $canonical = Directives::canonical($directive);
 
         if (Directives::isStandalone($canonical)) {
-            // presence is the whole meaning; a falsey value removes it
+            // presence is the whole meaning; null (none given) turns it on, a falsey value removes it
             if (false === $sources || [] === $sources || '' === $sources) {
                 unset($this->directives[$canonical]);
             } else {
                 $this->directives[$canonical] = [];
             }
+            return $this;
+        }
+
+        // `sandbox` / `trusted-types` with no value are their strictest form, so
+        // `false` must switch them off rather than leave them bare
+        if (false === $sources && Directives::allowsEmptyValue($canonical)) {
+            unset($this->directives[$canonical]);
             return $this;
         }
 
@@ -226,12 +235,12 @@ class Policy
      * full token normalization; value directives (report-uri, sandbox, …) keep
      * their raw tokens.
      *
-     * @param string|array|bool $sources
+     * @param string|array|bool|null $sources
      * @return string[]
      */
-    private function tokenize(string $canonical, string|array|bool $sources): array
+    private function tokenize(string $canonical, string|array|bool|null $sources): array
     {
-        if (is_bool($sources)) {
+        if (null === $sources || is_bool($sources)) {
             return [];
         }
 
@@ -239,6 +248,8 @@ class Policy
         foreach ((array) $sources as $chunk) {
             foreach (preg_split('/\s+/', trim((string) $chunk)) ?: [] as $piece) {
                 if ('' !== $piece) {
+                    // value directives skip normalize(), so guard every token here
+                    Source::assertSafe($piece);
                     $raw[] = $piece;
                 }
             }

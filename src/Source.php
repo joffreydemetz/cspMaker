@@ -9,6 +9,8 @@
 
 namespace JDZ\CspMaker;
 
+use JDZ\CspMaker\Exception\CspMakerException;
+
 /**
  * Normalizes and classifies a single CSP source expression.
  *
@@ -50,7 +52,26 @@ final class Source
     private const HASH_PREFIXES = ['nonce-', 'sha256-', 'sha384-', 'sha512-'];
 
     /**
+     * Reject a token that could break out of its directive: `;` ends the
+     * directive, `,` starts a second policy, a control character splits or
+     * corrupts the header.
+     *
+     * @throws CspMakerException
+     */
+    public static function assertSafe(string $token): void
+    {
+        if (preg_match('/[;,\x00-\x1F\x7F]/', $token)) {
+            throw new CspMakerException(sprintf(
+                'Invalid CSP token "%s": ";", "," and control characters are not allowed.',
+                addcslashes($token, "\0..\37\177")
+            ));
+        }
+    }
+
+    /**
      * Normalize a raw source into a valid CSP token.
+     *
+     * @throws CspMakerException when the source contains `;`, `,` or a control character.
      */
     public static function normalize(string $source): string
     {
@@ -60,9 +81,13 @@ final class Source
             return '';
         }
 
-        // Already a quoted keyword / nonce / hash.
+        self::assertSafe($source);
+
+        // Already a quoted keyword / nonce / hash: a keyword is lowercased (browsers
+        // match it case-insensitively), a nonce or hash keeps its base64 case
         if (str_starts_with($source, "'") && str_ends_with($source, "'")) {
-            return $source;
+            $keyword = strtolower(trim($source, "'"));
+            return in_array($keyword, self::KEYWORDS, true) ? "'" . $keyword . "'" : $source;
         }
 
         // Already an explicit scheme (`data:`, `https:`) or scheme-host (`https://x`).
@@ -126,7 +151,8 @@ final class Source
 
     private static function isHashOrNonce(string $normalized): bool
     {
-        $inner = trim($normalized, "'");
+        // case-insensitive, as normalize() is
+        $inner = strtolower(trim($normalized, "'"));
         foreach (self::HASH_PREFIXES as $prefix) {
             if (str_starts_with($inner, $prefix)) {
                 return true;

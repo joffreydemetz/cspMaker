@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\Integration;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use JDZ\CspMaker\Policy;
 use JDZ\CspMaker\Integration\Matomo;
-use JDZ\CspMaker\Integration\Registry;
 use JDZ\CspMaker\Exception\CspMakerException;
 
 final class MatomoTest extends TestCase
@@ -31,18 +31,44 @@ final class MatomoTest extends TestCase
         $this->assertContains('piwik.example.com', $policy->get('script-src'));
     }
 
-    public function testMissingHostThrows(): void
+    public static function hostVariantsProvider(): array
     {
-        $this->expectException(CspMakerException::class);
-        (new Matomo())->apply(new Policy(), []);
+        return [
+            'host option trimmed' => [['host' => '  stats.example.com  ']],
+            'host option wins over positional' => [['host' => 'stats.example.com', 0 => 'other.example.com']],
+            'positional trimmed' => [[' stats.example.com ']],
+        ];
     }
 
-    public function testRegistryResolvesBuiltins(): void
+    #[DataProvider('hostVariantsProvider')]
+    public function testHostVariantsResolveToOneTrimmedHost(array $options): void
     {
-        $registry = new Registry();
+        $policy = new Policy();
+        (new Matomo())->apply($policy, $options);
 
-        $this->assertTrue($registry->has('matomo'));
-        $this->assertTrue($registry->has('googleFonts'));
-        $this->assertContains('matomo', $registry->names());
+        $this->assertSame([
+            'connect-src' => ['stats.example.com'],
+            'frame-src' => ['stats.example.com'],
+            'img-src' => ['stats.example.com'],
+            'script-src' => ['stats.example.com'],
+        ], $policy->toArray());
+    }
+
+    public static function missingHostProvider(): array
+    {
+        return [
+            'no options' => [[]],
+            'empty host' => [['host' => '']],
+            'blank host' => [['host' => '   ']],
+            'empty positional' => [['']],
+        ];
+    }
+
+    #[DataProvider('missingHostProvider')]
+    public function testMissingHostThrows(array $options): void
+    {
+        $this->expectException(CspMakerException::class);
+        $this->expectExceptionMessage('The matomo integration requires a host, e.g. ["host" => "piwik.example.com"].');
+        (new Matomo())->apply(new Policy(), $options);
     }
 }

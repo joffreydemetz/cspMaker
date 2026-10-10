@@ -80,13 +80,13 @@ class CspBuilder
 
     // -- generic -----------------------------------------------------------
 
-    public function add(string $directive, string|array|bool $sources = []): self
+    public function add(string $directive, string|array|bool|null $sources = null): self
     {
         $this->policy->add($directive, $sources);
         return $this;
     }
 
-    public function set(string $directive, string|array|bool $sources = []): self
+    public function set(string $directive, string|array|bool|null $sources = null): self
     {
         $this->policy->set($directive, $sources);
         return $this;
@@ -98,7 +98,7 @@ class CspBuilder
         return $this;
     }
 
-    /** @param array<string,string|array|bool> $policy */
+    /** @param array<string,string|array|bool|null> $policy */
     public function merge(array $policy): self
     {
         $this->policy->merge($policy);
@@ -197,9 +197,10 @@ class CspBuilder
     }
 
     /**
-     * Apply a list of integrations in config form — "name" or ["name" => options].
+     * Apply integrations in config form — a list of "name" or ["name" => options],
+     * or a map name => options (null/true = defaults, false = skip).
      *
-     * @param array<int,mixed> $list
+     * @param array<int|string,mixed> $list
      */
     public function integrations(array $list): self
     {
@@ -239,11 +240,19 @@ class CspBuilder
     }
 
     /**
-     * @param array<int,mixed> $integrations  list of "name" or ["name" => options]
+     * Two shapes, freely mixed: list entries ("name" or ["name" => options]) and
+     * map entries (name => options).
+     *
+     * @param array<int|string,mixed> $integrations
      */
     private function applyIntegrationsConfig(array $integrations): void
     {
-        foreach ($integrations as $entry) {
+        foreach ($integrations as $key => $entry) {
+            if (is_string($key)) {
+                $this->applyIntegrationEntry($key, $entry);
+                continue;
+            }
+
             if (is_string($entry)) {
                 $this->with($entry);
                 continue;
@@ -251,12 +260,25 @@ class CspBuilder
 
             if (is_array($entry)) {
                 foreach ($entry as $name => $opts) {
-                    $options = is_array($opts)
-                        ? $opts
-                        : (null === $opts || true === $opts ? [] : [$opts]);
-                    $this->with((string) $name, $options);
+                    $this->applyIntegrationEntry((string) $name, $opts);
                 }
             }
         }
+    }
+
+    /**
+     * One name => options pair: null/true = the recipe's defaults, false = skip
+     * it, an array = its options, any other value = its first positional option.
+     */
+    private function applyIntegrationEntry(string $name, mixed $opts): void
+    {
+        if (false === $opts) {
+            return;
+        }
+
+        $options = is_array($opts)
+            ? $opts
+            : (null === $opts || true === $opts ? [] : [$opts]);
+        $this->with($name, $options);
     }
 }

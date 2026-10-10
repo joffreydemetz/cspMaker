@@ -63,6 +63,15 @@ final class Directives
         'trusted-types',
     ];
 
+    /**
+     * Value directives whose empty form is meaningful — and their strictest:
+     * `sandbox;` applies every restriction, `trusted-types;` allows no policy.
+     */
+    public const EMPTY_VALUE = [
+        'sandbox',
+        'trusted-types',
+    ];
+
     /** Standalone directives — no value at all. */
     public const STANDALONE = [
         'upgrade-insecure-requests',
@@ -146,6 +155,12 @@ final class Directives
     public static function isStandalone(string $canonical): bool
     {
         return in_array($canonical, self::STANDALONE, true);
+    }
+
+    /** Does this directive still mean something (its strictest form) with no value? */
+    public static function allowsEmptyValue(string $canonical): bool
+    {
+        return in_array($canonical, self::EMPTY_VALUE, true);
     }
 
     /** Position of a directive in the canonical render order (unknowns sort last). */

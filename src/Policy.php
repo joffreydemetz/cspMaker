@@ -175,9 +175,26 @@ class Policy
             $warnings[] = 'No default-src set — fetch directives you did not list are unrestricted.';
         }
 
+        // a fetch directive set without 'self' while default-src has it: the fallback is
+        // gone for it, the site's own resources are blocked
+        if (isset($this->directives['default-src']) && in_array("'self'", $this->directives['default-src'], true)) {
+            foreach ($this->directives as $canonical => $tokens) {
+                $collapsed = $this->collapse($tokens);
+                if ('default-src' !== $canonical && Directives::isFetch($canonical) && [] !== $collapsed && ["'none'"] !== $collapsed && !in_array("'self'", $collapsed, true)) {
+                    $warnings[] = sprintf("%s does not include 'self' while default-src does — the site's own resources are blocked for it.", $canonical);
+                }
+            }
+        }
+
         foreach (['script-src', 'style-src'] as $d) {
             if (isset($this->directives[$d]) && in_array("'unsafe-inline'", $this->directives[$d], true)) {
                 $warnings[] = sprintf("%s allows 'unsafe-inline' — weakens XSS protection.", $d);
+            }
+        }
+
+        foreach ($this->directives as $canonical => $tokens) {
+            if (Directives::isSourceList($canonical) && in_array("'unsafe-inline'", $tokens, true) && $this->hasNonceOrHash($tokens)) {
+                $warnings[] = sprintf("%s has 'unsafe-inline' next to a nonce or hash — browsers that support them ignore 'unsafe-inline'.", $canonical);
             }
         }
 
@@ -186,12 +203,26 @@ class Policy
         }
 
         foreach ($this->directives as $canonical => $tokens) {
-            if (Directives::isSourceList($canonical) && [] === $this->collapse($tokens)) {
+            // a source list, or a value directive that is neither standalone nor allowed empty
+            $droppable = Directives::isSourceList($canonical)
+                || (!Directives::isStandalone($canonical) && !Directives::allowsEmptyValue($canonical));
+            if ($droppable && [] === $this->collapse($tokens)) {
                 $warnings[] = sprintf('%s is present but empty — it will be dropped from output.', $canonical);
             }
         }
 
         return $warnings;
+    }
+
+    private function hasNonceOrHash(array $tokens): bool
+    {
+        foreach ($tokens as $token) {
+            if (5 === Source::rank($token)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function put(string $directive, string|array|bool|null $sources, bool $overwrite): self

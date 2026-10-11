@@ -217,6 +217,12 @@ class Policy
 
         $tokens = $this->tokenize($canonical, $sources);
 
+        // report-to names one reporting group (several were emitted, which browsers refuse): the last one given
+        if ('report-to' === $canonical) {
+            $tokens = array_slice($tokens, -1);
+            $overwrite = true;
+        }
+
         if ($overwrite || !isset($this->directives[$canonical])) {
             // a fetch directive created on the fly stops the default-src fallback for its
             // resources: it starts from default-src's sources (it started empty, so an

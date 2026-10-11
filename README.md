@@ -75,7 +75,13 @@ CspBuilder::create()->registerIntegration(new MyWidget())->with('my-widget');
 - **Token normalization** — `self` → `'self'`, `data` → `data:`, nonces/hashes quoted.
 - **Validation** — adding a source to a misspelled directive throws instead of silently vanishing.
 - **`'none'` collapse**, dedup, and a stable canonical render order.
-- **`lint()`** — advisories (missing `default-src`, `'unsafe-inline'`, unconstrained `object-src`).
+- **`default-src` seeding** — a fetch directive created on the fly by `add()`, an integration or `allowInline()` starts from `default-src`'s sources (creating `script-src` would otherwise stop the `default-src` fallback and block the site's own scripts). Not with `set()`, not when `'none'` is added, not for `base-uri` / `form-action` / `frame-ancestors`, and only once `default-src` is there.
+- **`report-to`** names one reporting group: the last one given.
+- **`lint()`** — advisories: missing `default-src`; a fetch directive without `'self'` while `default-src` has it; `'unsafe-inline'`, and `'unsafe-inline'` next to a nonce or hash; unconstrained `object-src`; a directive present but empty (`report-to` included).
+
+## Changelog
+
+- **1.1.2** (2026-10-11) — a fetch directive created on the fly starts from `default-src`'s sources (it started empty: an integration or `allowInline()` blocked the site's own scripts; see *Niceties*); `report-to` keeps one group, the last given (several were emitted); `lint()` warns on a fetch directive without `'self'` while `default-src` has it, on `'unsafe-inline'` next to a nonce or hash, and on an empty `report-to`.
 
 ## Used by
 

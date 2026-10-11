@@ -436,6 +436,28 @@ final class CspBuilderTest extends TestCase
         );
     }
 
+    /** 1.1.2: allowInline() on a locked-down policy keeps the site's own scripts (the new directives started empty) */
+    public function testAllowInlineAfterLockedDownDefaultsKeepsSelf(): void
+    {
+        $this->assertSame(
+            "default-src 'self'; object-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; base-uri 'self'; frame-ancestors 'self';",
+            CspBuilder::create()->lockedDownDefaults()->allowInline()->build()
+        );
+    }
+
+    public function testAnIntegrationOnALockedDownPolicyKeepsSelf(): void
+    {
+        $this->assertStringContainsString(
+            "script-src 'self' piwik.example.com;",
+            CspBuilder::create()->lockedDownDefaults()->matomo('piwik.example.com')->build()
+        );
+    }
+
+    public function testReportToTwiceKeepsTheLastGroup(): void
+    {
+        $this->assertSame('report-to b;', CspBuilder::create()->reportTo('a')->reportTo('b')->build());
+    }
+
     public function testLintReportsThePolicyWarnings(): void
     {
         $this->assertSame(

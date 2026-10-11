@@ -360,4 +360,102 @@ final class PolicyTest extends TestCase
     {
         $this->assertSame($expected, (new Policy($policy))->lint());
     }
+
+    // --- 1.1.2 ---
+
+    public static function seedProvider(): array
+    {
+        return [
+            'a new fetch directive starts from default-src' => [
+                ['default-src' => 'self'], 'script-src', 'https://cdn.example.com',
+                "default-src 'self'; script-src 'self' https://cdn.example.com;",
+            ],
+            "default-src 'none' seeds nothing visible" => [
+                ['default-src' => 'none'], 'script-src', 'https://cdn.example.com',
+                "default-src 'none'; script-src https://cdn.example.com;",
+            ],
+            'several default sources are carried over' => [
+                ['default-src' => ['self', 'data']], 'img-src', 'https://img.example.com',
+                "default-src 'self' data:; img-src 'self' data: https://img.example.com;",
+            ],
+            'a directive that does not fall back to default-src is not seeded' => [
+                ['default-src' => 'self'], 'form-action', 'https://pay.example.com',
+                "default-src 'self'; form-action https://pay.example.com;",
+            ],
+            'without default-src nothing is seeded' => [
+                [], 'script-src', 'https://cdn.example.com',
+                'script-src https://cdn.example.com;',
+            ],
+            'an existing directive is not re-seeded' => [
+                ['default-src' => 'self', 'script-src' => 'https://a.example.com'], 'script-src', 'https://b.example.com',
+                "default-src 'self'; script-src 'self' https://a.example.com https://b.example.com;",
+            ],
+        ];
+    }
+
+    /**
+     * A fetch directive created on the fly stops the default-src fallback for its
+     * resources: it starts from default-src's sources (it started empty, so an
+     * integration or allowInline() blocked the site's own scripts).
+     */
+    #[DataProvider('seedProvider')]
+    public function testAddSeedsANewFetchDirectiveFromDefaultSrc(array $initial, string $directive, string $sources, string $expected): void
+    {
+        $this->assertSame($expected, (new Policy($initial))->add($directive, $sources)->build());
+    }
+
+    public function testSetDoesNotSeed(): void
+    {
+        $this->assertSame(
+            "default-src 'self'; script-src https://cdn.example.com;",
+            (new Policy(['default-src' => 'self']))->set('script-src', 'https://cdn.example.com')->build()
+        );
+    }
+
+    public function testADefaultSrcAddedLaterIsNotRetroactive(): void
+    {
+        $this->assertSame(
+            "default-src 'self'; script-src https://cdn.example.com;",
+            (new Policy())->add('script-src', 'https://cdn.example.com')->add('default-src', 'self')->build()
+        );
+    }
+
+    /** report-to names one reporting group (several were emitted, which browsers refuse): the last one given */
+    public function testReportToKeepsOneGroupTheLastOne(): void
+    {
+        $this->assertSame('report-to b;', (new Policy())->add('report-to', 'a')->add('report-to', 'b')->build());
+        $this->assertSame('report-to b;', (new Policy())->add('report-to', 'a b')->build());
+    }
+
+    public function testLintWarnsOnAFetchDirectiveWithoutSelfWhileDefaultSrcHasIt(): void
+    {
+        $policy = (new Policy(['default-src' => 'self', 'object-src' => 'none']))->set('script-src', 'https://cdn.example.com');
+
+        $this->assertSame(
+            ["script-src does not include 'self' while default-src does — the site's own resources are blocked for it."],
+            $policy->lint()
+        );
+    }
+
+    public function testLintWarnsOnUnsafeInlineNextToANonceOrHash(): void
+    {
+        $policy = new Policy(['default-src' => 'self', 'object-src' => 'none', 'script-src' => ['self', 'unsafe-inline', 'nonce-abc'], 'style-src' => ['self', 'unsafe-inline', 'sha256-AbC=']]);
+
+        $this->assertSame(
+            [
+                "script-src allows 'unsafe-inline' — weakens XSS protection.",
+                "style-src allows 'unsafe-inline' — weakens XSS protection.",
+                "script-src has 'unsafe-inline' next to a nonce or hash — browsers that support them ignore 'unsafe-inline'.",
+                "style-src has 'unsafe-inline' next to a nonce or hash — browsers that support them ignore 'unsafe-inline'.",
+            ],
+            $policy->lint()
+        );
+    }
+
+    public function testLintWarnsOnAnEmptyReportTo(): void
+    {
+        $policy = new Policy(['default-src' => 'self', 'object-src' => 'none', 'report-to' => []]);
+
+        $this->assertSame(['report-to is present but empty — it will be dropped from output.'], $policy->lint());
+    }
 }

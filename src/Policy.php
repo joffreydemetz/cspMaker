@@ -218,7 +218,11 @@ class Policy
         $tokens = $this->tokenize($canonical, $sources);
 
         if ($overwrite || !isset($this->directives[$canonical])) {
-            $this->directives[$canonical] = [];
+            // a fetch directive created on the fly stops the default-src fallback for its
+            // resources: it starts from default-src's sources (it started empty, so an
+            // integration or allowInline() blocked the site's own scripts)
+            $seed = !$overwrite && 'default-src' !== $canonical && Directives::isFetch($canonical);
+            $this->directives[$canonical] = $seed ? ($this->directives['default-src'] ?? []) : [];
         }
 
         foreach ($tokens as $token) {

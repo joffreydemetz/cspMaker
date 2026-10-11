@@ -93,7 +93,8 @@ final class CspBuilderTest extends TestCase
 
         try {
             $this->assertSame(
-                "default-src 'self'; connect-src stats.example.com; frame-src stats.example.com; img-src stats.example.com; script-src 'self' 'unsafe-inline' stats.example.com;",
+                // 1.1.2: the directives the integration creates start from default-src ('self')
+            "default-src 'self'; connect-src 'self' stats.example.com; frame-src 'self' stats.example.com; img-src 'self' stats.example.com; script-src 'self' 'unsafe-inline' stats.example.com;",
                 CspBuilder::fromYaml($tmp)->build()
             );
         } finally {
@@ -390,9 +391,9 @@ final class CspBuilderTest extends TestCase
 
         try {
             $this->assertSame(
-                "default-src 'self'; connect-src stats.example.com; font-src https://fonts.gstatic.com; "
-                . 'frame-src https://www.youtube-nocookie.com https://www.youtube.com stats.example.com; '
-                . 'img-src https://i.ytimg.com stats.example.com; script-src stats.example.com; style-src https://fonts.googleapis.com;',
+                "default-src 'self'; connect-src 'self' stats.example.com; font-src 'self' https://fonts.gstatic.com; "
+                . "frame-src 'self' https://www.youtube-nocookie.com https://www.youtube.com stats.example.com; "
+                . "img-src 'self' https://i.ytimg.com stats.example.com; script-src 'self' stats.example.com; style-src 'self' https://fonts.googleapis.com;",
                 CspBuilder::fromYaml($tmp)->build()
             );
         } finally {
@@ -415,7 +416,7 @@ final class CspBuilderTest extends TestCase
         $registry = (new Registry())->register(self::widget());
 
         $this->assertSame(
-            "default-src 'self'; img-src widget.example.com;",
+            "default-src 'self'; img-src 'self' widget.example.com;",
             CspBuilder::fromArray(['policy' => ['default-src' => 'self'], 'integrations' => ['widget']], $registry)->build()
         );
     }

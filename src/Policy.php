@@ -258,7 +258,9 @@ class Policy
             // a fetch directive created on the fly stops the default-src fallback for its
             // resources: it starts from default-src's sources (it started empty, so an
             // integration or allowInline() blocked the site's own scripts)
-            $seed = !$overwrite && 'default-src' !== $canonical && Directives::isFetch($canonical);
+            // (not when nothing is added, nor when 'none' is: an explicit 'none' locks the directive down)
+            $seed = !$overwrite && 'default-src' !== $canonical && Directives::isFetch($canonical)
+                && [] !== $tokens && !in_array("'none'", $tokens, true);
             $this->directives[$canonical] = $seed ? ($this->directives['default-src'] ?? []) : [];
         }
 

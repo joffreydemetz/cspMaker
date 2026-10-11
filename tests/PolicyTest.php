@@ -291,8 +291,13 @@ final class PolicyTest extends TestCase
                 ['script-src' => ['self', 'unsafe-inline', 'nonce-abc']], 'script-src', "'unsafe-inline' 'nonce-abc'",
                 "script-src 'self';",
             ],
-            'last source removed drops the directive back to default-src' => [
+            // 1.1.2: the directive was seeded from default-src, so its last explicit source leaves 'self'
+            'last explicit source removed leaves the seeded self' => [
                 ['default-src' => 'self', 'script-src' => 'https://cdn.example.com'], 'script-src', 'https://cdn.example.com',
+                "default-src 'self'; script-src 'self';",
+            ],
+            'last source removed drops a directive that was not seeded' => [
+                ['script-src' => 'https://cdn.example.com', 'default-src' => 'self'], 'script-src', 'https://cdn.example.com',
                 "default-src 'self';",
             ],
             'source of an unset directive is a no-op' => [
